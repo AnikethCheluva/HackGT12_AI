@@ -10,34 +10,52 @@ const pc = new Pinecone({ apiKey: 'pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQThU6
 const pineconeIndex = pc.index('smart-calendar');
 
 export const queryHabitsTool = createTool({
-  id: 'query-user-habits',
-  description: 'Searches the user\'s memory for relevant habits, feelings, or patterns based on a conceptual query.',
+  id: 'schedule-optimal-event',
+  description: 'Automatically finds the most appropriate time to schedule an event (e.g., "schedule homework for tomorrow") based on user feedback after previous events.',
   inputSchema: z.object({
-    query: z.string().describe('A conceptual query about the user\'s habits, e.g., "user focus and energy levels" or "feelings after meetings".'),
+    event: z.string().describe('A natural language request for an event to schedule, e.g., "schedule homework for tomorrow".'),
   }),
   outputSchema: z.object({
-    results: z.array(z.string()).describe('A list of the most relevant memories or habits found.'),
+    suggestions: z.array(z.object({
+      time: z.string().describe('Suggested time for the event, in ISO 8601 format.'),
+      reason: z.string().describe('Why this time is optimal, based on user feedback.'),
+    })).describe('A list of suggested times and reasons for scheduling the event.'),
   }),
   execute: async ({ context }) => {
-    // 1. Embed the conceptual query
+    // 1. Embed the event request
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-small"),
-      value: context.query,
+      value: context.event,
     });
 
-    // 2. Query Pinecone with the vector
+    // 2. Query Pinecone for top matches (events with positive feedback after intensive tasks)
     const queryResult = await pineconeIndex.query({
-      topK: 5, // Get the top 5 most relevant results
+      topK: 5,
       vector: embedding,
-      // NOTE: In a real multi-user app, you'd filter by userId here
-      // filter: { userId: 'user_abc' }
+      // You may want to filter for events with feedback metadata
+      // filter: { userId: 'user_abc', feedback: { $exists: true } }
     });
 
-    // 3. Return the original text from the results' metadata
-    const results = queryResult.matches
-      .map(match => (match.metadata as { originalText: string })?.originalText)
-      .filter(text => text); // Filter out any undefined results
+    // 3. Find time slots after events where user feedback was positive (e.g., felt focused, energized)
+    const suggestions = queryResult.matches
+      .map(match => {
+        const meta = match.metadata as {
+          originalText: string;
+          eventTime: string; // ISO 8601
+          feedback: string;
+        };
+        // Example: Only suggest times after events with positive feedback
+        if (meta && meta.eventTime && meta.feedback && /positive|energized|focused|productive/i.test(meta.feedback)) {
+          return {
+            time: meta.eventTime,
+            reason: `User felt ${meta.feedback} after this time slot.`,
+          };
+        }
+        return null;
+      })
+      .filter(s => s !== null);
 
-    return { results };
+    return { suggestions };
   },
 });
+

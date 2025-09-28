@@ -17,13 +17,13 @@ const getFreeBusyTool = createTool({
   id: 'get-free-busy',
   description: "Checks the user's primary calendar for busy time slots within a given date range. This is used to find free time.",
   inputSchema: z.object({
-    startTime: z.string().datetime().describe('The start of the range to check, in ISO 8601 format.'),
-    endTime: z.string().datetime().describe('The end of the range to check, in ISO 8601 format.'),
+    startTime: z.string().describe('The start of the range to check, in ISO 8601 format, this information can come from the users general description of when they want to place an event'),
+    endTime: z.string().describe('The end of the range to check, in ISO 8601 format. this information can come from the users general description of when they want to place an event'),
   }),
   outputSchema: z.object({
     busySlots: z.array(z.object({
-      start: z.string().datetime(),
-      end: z.string().datetime(),
+      start: z.string(),
+      end: z.string(),
     })).describe('A list of time slots that are already occupied on the calendar.'),
   }),
   execute: async ({ context }) => {
