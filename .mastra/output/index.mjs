@@ -9,13 +9,12 @@ import { LibSQLStore } from '@mastra/libsql';
 import { openai as openai$2 } from '@ai-sdk/openai';
 import { Agent, MessageList } from '@mastra/core/agent';
 import { Memory as Memory$1 } from '@mastra/memory';
-import { gmailTool } from './tools/0e96aabe-5d43-47de-b4ef-0eaae3ed46cd.mjs';
-import { calendarTools, eventTrackerTool } from './tools/276c7cf0-9436-40a9-8ae9-73a149e83540.mjs';
-import { queryHabitsTool } from './tools/124f2e90-6d7d-4170-a60f-541c91cdae98.mjs';
-import { saveFeedbackTool } from './tools/1bf9ed43-7b8c-4b74-8fc5-0083b09c484f.mjs';
+import { gmailTool } from './tools/2c574030-96f0-42b5-92cd-c90a4df61048.mjs';
+import { calendarTools } from './tools/482601f9-7060-4e34-8592-6597dd9687f2.mjs';
+import { queryHabitsTool } from './tools/259790f4-7ca1-4ecc-81fd-cc133f7e48f7.mjs';
+import { saveFeedbackTool } from './tools/6b03ae07-16d2-48cd-b16b-0e501de45b8c.mjs';
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { z, ZodFirstPartyTypeKind, ZodObject } from 'zod';
-import { Agent as Agent$1 } from '@mastra/core';
 import crypto$1, { randomUUID } from 'crypto';
 import { readdir, readFile, mkdtemp, rm, writeFile, mkdir, copyFile, stat } from 'fs/promises';
 import * as https from 'https';
@@ -162,24 +161,13 @@ const knowledgeSessionWorkflow = createWorkflow({
   };
 }).then(initializeAgent).commit();
 
-const eventAgent = new Agent$1({
-  id: "eventAgent",
-  name: "eventAgent",
-  instructions: "Your job is to watch calendar events.",
-  // Minimal model placeholder to satisfy the Agent type. Replace with a real model in production.
-  model: openai$2("gpt-4o-mini"),
-  tools: { eventTrackerTool },
-  memory: new Memory$1({})
-});
-
 const mastra = new Mastra({
   workflows: {
     knowledgeSessionWorkflow
   },
   agents: {
     calendarAgent,
-    knowledgeAgent,
-    eventAgent
+    knowledgeAgent
   },
   storage: new LibSQLStore({
     url: ":memory:"

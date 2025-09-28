@@ -162,52 +162,5 @@ const calendarTools = {
   deleteCalendarEventTool,
   updateCalendarEventTool
 };
-const eventTrackerTool = {
-  id: "eventTrackerTool",
-  description: "Check recent Google Calendar events that finished.",
-  parameters: {
-    type: "object",
-    properties: {
-      query: {
-        type: "string",
-        description: "Natural language like 'last 10 minutes' or 'last hour'."
-      }
-    },
-    required: ["query"]
-  },
-  run: async ({ query }) => {
-    const calendar = authenticate();
-    const minutesMatch = query.match(/(\d+)\s*minute/);
-    const hoursMatch = query.match(/(\d+)\s*hour/);
-    let lookbackMinutes = 5;
-    if (minutesMatch) lookbackMinutes = parseInt(minutesMatch[1], 10);
-    if (hoursMatch) lookbackMinutes = parseInt(hoursMatch[1], 10) * 60;
-    const now = /* @__PURE__ */ new Date();
-    const since = new Date(now.getTime() - lookbackMinutes * 60 * 1e3);
-    const lookbackBuffer = new Date(since.getTime() - 60 * 60 * 1e3);
-    const response = await calendar.events.list({
-      calendarId: "primary",
-      timeMin: lookbackBuffer.toISOString(),
-      timeMax: now.toISOString(),
-      singleEvents: true,
-      orderBy: "startTime"
-    });
-    const events = response.data.items || [];
-    const finishedEvents = events.filter((e) => {
-      const endTime = e.end?.dateTime || e.end?.date;
-      if (!endTime) return false;
-      const end = new Date(endTime);
-      return end >= since && end <= now;
-    });
-    if (finishedEvents.length > 0) {
-      const names = finishedEvents.map((e) => e.summary || "Unnamed Event");
-      return {
-        text: `\u{1F44B} Hello World \u2014 These events finished: ${names.join(", ")}.`
-      };
-    } else {
-      return { text: "No events finished in that timeframe." };
-    }
-  }
-};
 
-export { calendarTools, eventTrackerTool };
+export { calendarTools };

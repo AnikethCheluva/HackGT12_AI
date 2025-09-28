@@ -29,9 +29,9 @@ const gmailTool = createTool({
     }))
   }),
   execute: async ({ context }) => {
-    const CLIENT_ID = "237620176891-5a0ogdie8jq95v4kbqv76jd0qrtnn3m8.apps.googleusercontent.com";
-    const CLIENT_SECRET = "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";
-    const REFRESH_TOKEN = "1//01zTTWgfSMAjECgYIARAAGAESNwF-L9IrwVSdVVaZ2GmQk5B1QjDYGbyudBbq-aK5k3qZF2KlerR7gbU256RKsgFy6CmrxV_zQW8";
+    const CLIENT_ID = process.env.CLIENT_ID;
+    const CLIENT_SECRET = process.env.CLIENT_SECRET;
+    const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
     const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, "http://localhost");
     oAuth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
     const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
@@ -116,8 +116,8 @@ const getCalendarEventsTool = createTool({
   id: "get-calendar-events",
   description: "Fetches events from the primary Google Calendar within a specified time range. Defaults to today if no range is provided.",
   inputSchema: z.object({
-    timeMin: z.string().datetime().optional(),
-    timeMax: z.string().datetime().optional()
+    timeMin: z.string().optional(),
+    timeMax: z.string().optional()
   }),
   outputSchema: z.object({
     events: z.array(z.object({
@@ -236,33 +236,38 @@ const pc$1 = new Pinecone({ apiKey: "pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQTh
 const pineconeIndex$1 = pc$1.index("smart-calendar");
 const queryHabitsTool = createTool({
   id: "schedule-optimal-event",
-  description: 'Automatically finds the most appropriate time to schedule an event (e.g., "schedule homework for tomorrow") based on user feedback after previous events.',
+  description: "Finds feedback text semantically similar to the user input, then suggests times based on the metadata of the top-k closest vectors.",
   inputSchema: z.object({
-    event: z.string().describe('A natural language request for an event to schedule, e.g., "schedule homework for tomorrow".')
+    eventtext: z.string().describe('A natural language request for an event to schedule, e.g., "schedule homework for tomorrow".')
   }),
   outputSchema: z.object({
     suggestions: z.array(z.object({
-      time: z.string().describe("Suggested time for the event, in ISO 8601 format."),
-      reason: z.string().describe("Why this time is optimal, based on user feedback.")
+      potstart: z.string().describe("Suggested time for the event, in ISO 8601 format."),
+      reason: z.string().describe("Why this time is optimal, based on user feedback and event metadata."),
+      eventMetadata: z.record(z.any()).describe("Metadata from the closest matching feedback/event.")
     })).describe("A list of suggested times and reasons for scheduling the event.")
   }),
   execute: async ({ context }) => {
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-small"),
-      value: context.event
+      value: context.eventtext
     });
     const queryResult = await pineconeIndex$1.query({
       topK: 5,
       vector: embedding
-      // You may want to filter for events with feedback metadata
-      // filter: { userId: 'user_abc', feedback: { $exists: true } }
+    });
+    console.log("Pinecone matches:");
+    queryResult.matches.forEach((match, idx) => {
+      console.log(`Match #${idx + 1}: ID=${match.id}`);
+      console.log("Metadata:", match.metadata);
     });
     const suggestions = queryResult.matches.map((match) => {
       const meta = match.metadata;
-      if (meta && meta.eventTime && meta.feedback && /positive|energized|focused|productive/i.test(meta.feedback)) {
+      if (meta && meta.eventStart) {
         return {
-          time: meta.eventTime,
-          reason: `User felt ${meta.feedback} after this time slot.`
+          time: meta.eventStart,
+          reason: meta.feedback ? `User felt: ${meta.feedback} after event "${meta.eventSummary}".` : `Similar event: "${meta.eventSummary}"`,
+          eventMetadata: meta
         };
       }
       return null;
@@ -337,18 +342,25 @@ const calendarAgent = new Agent({
 
 const pc = new Pinecone({ apiKey: "pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQThU6u4MLJpZuAUcHohEXppYG4NQ2VvzuP7" });
 const pineconeIndex = pc.index("smart-calendar");
-const embedFeedbackTool = createTool({
+createTool({
   id: "save-feedback-tool",
   description: "Takes raw user feedback, converts it to an embedding, and saves it to the Pinecone database. This is a complete, one-step action.",
   inputSchema: z.object({
     text: z.string().describe("The user's raw feedback text."),
-    userId: z.string().describe("The ID of the user this feedback belongs to.")
+    userId: z.string().describe("The ID of the user this feedback belongs to."),
+    eventMetadata: z.object({
+      eventSummary: z.string().describe("Summary/title of the preceding event."),
+      eventStart: z.string().describe("Start time of the preceding event in ISO 8601 format."),
+      eventEnd: z.string().describe("End time of the preceding event in ISO 8601 format."),
+      eventDurationMinutes: z.number().describe("Duration of the event in minutes."),
+      eventLocation: z.string().optional().describe("Location of the event.")
+    }).optional().describe("Metadata about the closest event before this feedback.")
   }),
   outputSchema: z.object({
     success: z.boolean()
   }),
   execute: async ({ context }) => {
-    const { text, userId } = context;
+    const { text, userId, eventMetadata } = context;
     console.log(`Embedding text for user ${userId}...`);
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-small"),
@@ -360,28 +372,72 @@ const embedFeedbackTool = createTool({
       values: embedding,
       metadata: {
         userId,
-        originalText: text
+        originalText: text,
+        ...eventMetadata || {}
       }
     }]);
     console.log("\u2705 Feedback saved successfully!");
     return { success: true };
   }
 });
+const feedbackStore = {};
+const saveFeedbackTool = createTool({
+  id: "save-feedback-tool",
+  description: "Stores user feedback (focus, physical, social energy) linked to events for learning scheduling patterns.",
+  inputSchema: z.object({
+    userId: z.string().describe("The ID of the user this feedback belongs to."),
+    eventSummary: z.string().describe("Summary/title of the event."),
+    eventStart: z.string().describe("Start time of the event in ISO 8601 format."),
+    eventEnd: z.string().describe("End time of the event in ISO 8601 format."),
+    feedback: z.object({
+      focus: z.number().min(1).max(5).describe("Mental focus during the event (1\u20135)."),
+      physical: z.number().min(1).max(5).describe("Physical energy during the event (1\u20135)."),
+      social: z.number().min(1).max(5).describe("Mood/social energy during the event (1\u20135).")
+    })
+  }),
+  outputSchema: z.object({
+    success: z.boolean(),
+    message: z.string()
+  }),
+  execute: async ({ context }) => {
+    const { userId, eventSummary, eventStart, eventEnd, feedback } = context;
+    if (!feedbackStore[userId]) {
+      feedbackStore[userId] = [];
+    }
+    feedbackStore[userId].push({
+      eventSummary,
+      eventStart,
+      eventEnd,
+      ...feedback,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    console.log(`\u2705 Feedback stored for ${userId}:`, feedback);
+    return { success: true, message: "Feedback saved successfully." };
+  }
+});
 
 const knowledgeAgent = new Agent({
   name: "Knowledge Agent",
-  instructions: `Ask the User three personalized questions to learn about their current mood, energy level, and top priorities for today.
-questions:
-1. What is your energy level at this moment?
-2. How are you feeling right now?
-3. How focused are you? 
+  instructions: `
+You are the Feedback Agent for a smart calendar system.
 
-You are an expert on the user of a calendar app. You know all about their habits, preferences, and schedule.
-Use this knowledge to help them manage their life more effectively by understanding when certain events should be placed in their day for maximum efficiency and happiness.
-You can also help the user make better decisions about their schedule and life.
-Always confirm changes with the user.`,
+Your job is to collect simple feedback from the user after each event so the system can learn their energy and focus patterns over time. Keep your tone short, supportive, and conversational.
+
+After each static event (class, meeting, gym, etc.), ask the user these three questions:
+1. How focused did you feel during this event? (1\u20135)
+2. How physically energized did you feel? (1\u20135)
+3. How social or positive was your mood? (1\u20135)
+
+- If the user answers in words (e.g., "pretty tired"), interpret it into a 1\u20135 score.
+- Then, call the \`saveFeedbackTool\` with:
+  - userId
+  - event details (summary, start, end)
+  - the three feedback scores.
+
+Never skip calling the tool once feedback is collected. Always confirm to the user: "Thanks, I\u2019ve saved your feedback!"
+  `,
   model: openai("gpt-4o-mini"),
-  tools: { embedFeedbackTool },
+  tools: { saveFeedbackTool },
   memory: new Memory({})
 });
 

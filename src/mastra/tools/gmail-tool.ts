@@ -21,9 +21,9 @@ export const gmailTool = createTool({
   }),
   execute: async ({ context }) => {
     
-    const CLIENT_ID = '237620176891-5a0ogdie8jq95v4kbqv76jd0qrtnn3m8.apps.googleusercontent.com';
-    const CLIENT_SECRET = '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';
-    const REFRESH_TOKEN = '1//01zTTWgfSMAjECgYIARAAGAESNwF-L9IrwVSdVVaZ2GmQk5B1QjDYGbyudBbq-aK5k3qZF2KlerR7gbU256RKsgFy6CmrxV_zQW8';
+    const CLIENT_ID = process.env.CLIENT_ID;
+    const CLIENT_SECRET = process.env.CLIENT_SECRET;
+    const REFRESH_TOKEN = process.env.REFRESH_TOKEN;
 
     const oAuth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, 'http://localhost');
     oAuth2Client.setCredentials({ refresh_token: REFRESH_TOKEN });
