@@ -8,33 +8,38 @@ const pc = new Pinecone({ apiKey: "pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQThU6
 const pineconeIndex = pc.index("smart-calendar");
 const queryHabitsTool = createTool({
   id: "schedule-optimal-event",
-  description: 'Automatically finds the most appropriate time to schedule an event (e.g., "schedule homework for tomorrow") based on user feedback after previous events.',
+  description: "Finds feedback text semantically similar to the user input, then suggests times based on the metadata of the top-k closest vectors.",
   inputSchema: z.object({
-    event: z.string().describe('A natural language request for an event to schedule, e.g., "schedule homework for tomorrow".')
+    eventtext: z.string().describe('A natural language request for an event to schedule, e.g., "schedule homework for tomorrow".')
   }),
   outputSchema: z.object({
     suggestions: z.array(z.object({
-      time: z.string().describe("Suggested time for the event, in ISO 8601 format."),
-      reason: z.string().describe("Why this time is optimal, based on user feedback.")
+      potstart: z.string().describe("Suggested time for the event, in ISO 8601 format."),
+      reason: z.string().describe("Why this time is optimal, based on user feedback and event metadata."),
+      eventMetadata: z.record(z.any()).describe("Metadata from the closest matching feedback/event.")
     })).describe("A list of suggested times and reasons for scheduling the event.")
   }),
   execute: async ({ context }) => {
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-small"),
-      value: context.event
+      value: context.eventtext
     });
     const queryResult = await pineconeIndex.query({
       topK: 5,
       vector: embedding
-      // You may want to filter for events with feedback metadata
-      // filter: { userId: 'user_abc', feedback: { $exists: true } }
+    });
+    console.log("Pinecone matches:");
+    queryResult.matches.forEach((match, idx) => {
+      console.log(`Match #${idx + 1}: ID=${match.id}`);
+      console.log("Metadata:", match.metadata);
     });
     const suggestions = queryResult.matches.map((match) => {
       const meta = match.metadata;
-      if (meta && meta.eventTime && meta.feedback && /positive|energized|focused|productive/i.test(meta.feedback)) {
+      if (meta && meta.eventStart) {
         return {
-          time: meta.eventTime,
-          reason: `User felt ${meta.feedback} after this time slot.`
+          time: meta.eventStart,
+          reason: meta.feedback ? `User felt: ${meta.feedback} after event "${meta.eventSummary}".` : `Similar event: "${meta.eventSummary}"`,
+          eventMetadata: meta
         };
       }
       return null;

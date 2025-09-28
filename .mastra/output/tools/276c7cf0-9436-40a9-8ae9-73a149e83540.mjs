@@ -47,8 +47,8 @@ const getCalendarEventsTool = createTool({
   id: "get-calendar-events",
   description: "Fetches events from the primary Google Calendar within a specified time range. Defaults to today if no range is provided.",
   inputSchema: z.object({
-    timeMin: z.string().datetime().optional(),
-    timeMax: z.string().datetime().optional()
+    timeMin: z.string().optional(),
+    timeMax: z.string().optional()
   }),
   outputSchema: z.object({
     events: z.array(z.object({
@@ -85,8 +85,8 @@ const addCalendarEventTool = createTool({
   inputSchema: z.object({
     summary: z.string(),
     // FIX: Removed .datetime() for more flexible parsing by the Google API
-    startTime: z.string().describe("The start time in ISO 8601 format."),
-    endTime: z.string().describe("The end time in ISO 8601 format."),
+    startTime: z.string().describe(" VERY IMPORTANT: Convert All given times to ISO 8601 format."),
+    endTime: z.string().describe(" VERY IMPORTANT: Convert All given times to ISO 8601 format."),
     location: z.string().optional()
   }),
   outputSchema: z.object({
@@ -162,5 +162,52 @@ const calendarTools = {
   deleteCalendarEventTool,
   updateCalendarEventTool
 };
+const eventTrackerTool = {
+  id: "eventTrackerTool",
+  description: "Check recent Google Calendar events that finished.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Natural language like 'last 10 minutes' or 'last hour'."
+      }
+    },
+    required: ["query"]
+  },
+  run: async ({ query }) => {
+    const calendar = authenticate();
+    const minutesMatch = query.match(/(\d+)\s*minute/);
+    const hoursMatch = query.match(/(\d+)\s*hour/);
+    let lookbackMinutes = 5;
+    if (minutesMatch) lookbackMinutes = parseInt(minutesMatch[1], 10);
+    if (hoursMatch) lookbackMinutes = parseInt(hoursMatch[1], 10) * 60;
+    const now = /* @__PURE__ */ new Date();
+    const since = new Date(now.getTime() - lookbackMinutes * 60 * 1e3);
+    const lookbackBuffer = new Date(since.getTime() - 60 * 60 * 1e3);
+    const response = await calendar.events.list({
+      calendarId: "primary",
+      timeMin: lookbackBuffer.toISOString(),
+      timeMax: now.toISOString(),
+      singleEvents: true,
+      orderBy: "startTime"
+    });
+    const events = response.data.items || [];
+    const finishedEvents = events.filter((e) => {
+      const endTime = e.end?.dateTime || e.end?.date;
+      if (!endTime) return false;
+      const end = new Date(endTime);
+      return end >= since && end <= now;
+    });
+    if (finishedEvents.length > 0) {
+      const names = finishedEvents.map((e) => e.summary || "Unnamed Event");
+      return {
+        text: `\u{1F44B} Hello World \u2014 These events finished: ${names.join(", ")}.`
+      };
+    } else {
+      return { text: "No events finished in that timeframe." };
+    }
+  }
+};
 
-export { calendarTools };
+export { calendarTools, eventTrackerTool };

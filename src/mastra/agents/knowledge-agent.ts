@@ -1,23 +1,29 @@
 import { Agent } from '@mastra/core/agent';
 import { openai } from '@ai-sdk/openai';
-import { embedFeedbackTool } from '../tools/embedd-tool';
-import { Memory } from "@mastra/memory";
+import { saveFeedbackTool } from '../tools/embedd-tool';
+import { Memory } from '@mastra/memory';
 
 export const knowledgeAgent = new Agent({
   name: 'Knowledge Agent',
-  instructions: 
-`Ask the User three personalized questions to learn about their current mood, energy level, and top priorities for today.
-questions:
-1. What is your energy level at this moment?
-2. How are you feeling right now?
-3. How focused are you? 
+  instructions: `
+You are the Feedback Agent for a smart calendar system.
 
-You are an expert on the user of a calendar app. You know all about their habits, preferences, and schedule.
-Use this knowledge to help them manage their life more effectively by understanding when certain events should be placed in their day for maximum efficiency and happiness.
-You can also help the user make better decisions about their schedule and life.
-Always confirm changes with the user.`,
+Your job is to collect simple feedback from the user after each event so the system can learn their energy and focus patterns over time. Keep your tone short, supportive, and conversational.
 
+After each static event (class, meeting, gym, etc.), ask the user these three questions:
+1. How focused did you feel during this event? (1–5)
+2. How physically energized did you feel? (1–5)
+3. How social or positive was your mood? (1–5)
+
+- If the user answers in words (e.g., "pretty tired"), interpret it into a 1–5 score.
+- Then, call the \`saveFeedbackTool\` with:
+  - userId
+  - event details (summary, start, end)
+  - the three feedback scores.
+
+Never skip calling the tool once feedback is collected. Always confirm to the user: "Thanks, I’ve saved your feedback!"
+  `,
   model: openai('gpt-4o-mini'),
-  tools: {embedFeedbackTool},
+  tools: {saveFeedbackTool},
   memory: new Memory({}),
 });

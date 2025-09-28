@@ -9,12 +9,13 @@ import { LibSQLStore } from '@mastra/libsql';
 import { openai as openai$2 } from '@ai-sdk/openai';
 import { Agent, MessageList } from '@mastra/core/agent';
 import { Memory as Memory$1 } from '@mastra/memory';
-import { gmailTool } from './tools/3523835f-3bcc-4f2a-895a-5901cee59ced.mjs';
-import { calendarTools } from './tools/cd034c2c-a742-41c3-ba88-6c46f4ab4eb9.mjs';
-import { queryHabitsTool } from './tools/192e0a99-3131-459b-bbff-61f276406f89.mjs';
-import { embedFeedbackTool } from './tools/0454da1d-cad1-4dd0-9dd6-5dc7b318232b.mjs';
+import { gmailTool } from './tools/0e96aabe-5d43-47de-b4ef-0eaae3ed46cd.mjs';
+import { calendarTools, eventTrackerTool } from './tools/276c7cf0-9436-40a9-8ae9-73a149e83540.mjs';
+import { queryHabitsTool } from './tools/124f2e90-6d7d-4170-a60f-541c91cdae98.mjs';
+import { saveFeedbackTool } from './tools/1bf9ed43-7b8c-4b74-8fc5-0083b09c484f.mjs';
 import { createWorkflow, createStep } from '@mastra/core/workflows';
 import { z, ZodFirstPartyTypeKind, ZodObject } from 'zod';
+import { Agent as Agent$1 } from '@mastra/core';
 import crypto$1, { randomUUID } from 'crypto';
 import { readdir, readFile, mkdtemp, rm, writeFile, mkdir, copyFile, stat } from 'fs/promises';
 import * as https from 'https';
@@ -120,18 +121,26 @@ const calendarAgent = new Agent({
 
 const knowledgeAgent = new Agent({
   name: "Knowledge Agent",
-  instructions: `Ask the User three personalized questions to learn about their current mood, energy level, and top priorities for today.
-questions:
-1. What is your energy level at this moment?
-2. How are you feeling right now?
-3. How focused are you? 
+  instructions: `
+You are the Feedback Agent for a smart calendar system.
 
-You are an expert on the user of a calendar app. You know all about their habits, preferences, and schedule.
-Use this knowledge to help them manage their life more effectively by understanding when certain events should be placed in their day for maximum efficiency and happiness.
-You can also help the user make better decisions about their schedule and life.
-Always confirm changes with the user.`,
+Your job is to collect simple feedback from the user after each event so the system can learn their energy and focus patterns over time. Keep your tone short, supportive, and conversational.
+
+After each static event (class, meeting, gym, etc.), ask the user these three questions:
+1. How focused did you feel during this event? (1\u20135)
+2. How physically energized did you feel? (1\u20135)
+3. How social or positive was your mood? (1\u20135)
+
+- If the user answers in words (e.g., "pretty tired"), interpret it into a 1\u20135 score.
+- Then, call the \`saveFeedbackTool\` with:
+  - userId
+  - event details (summary, start, end)
+  - the three feedback scores.
+
+Never skip calling the tool once feedback is collected. Always confirm to the user: "Thanks, I\u2019ve saved your feedback!"
+  `,
   model: openai$2("gpt-4o-mini"),
-  tools: { embedFeedbackTool },
+  tools: { saveFeedbackTool },
   memory: new Memory$1({})
 });
 
@@ -153,13 +162,24 @@ const knowledgeSessionWorkflow = createWorkflow({
   };
 }).then(initializeAgent).commit();
 
+const eventAgent = new Agent$1({
+  id: "eventAgent",
+  name: "eventAgent",
+  instructions: "Your job is to watch calendar events.",
+  // Minimal model placeholder to satisfy the Agent type. Replace with a real model in production.
+  model: openai$2("gpt-4o-mini"),
+  tools: { eventTrackerTool },
+  memory: new Memory$1({})
+});
+
 const mastra = new Mastra({
   workflows: {
     knowledgeSessionWorkflow
   },
   agents: {
     calendarAgent,
-    knowledgeAgent
+    knowledgeAgent,
+    eventAgent
   },
   storage: new LibSQLStore({
     url: ":memory:"

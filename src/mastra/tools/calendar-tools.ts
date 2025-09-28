@@ -55,8 +55,8 @@ const getCalendarEventsTool = createTool({
   id: 'get-calendar-events',
   description: 'Fetches events from the primary Google Calendar within a specified time range. Defaults to today if no range is provided.',
   inputSchema: z.object({
-    timeMin: z.string().datetime().optional(),
-    timeMax: z.string().datetime().optional(),
+    timeMin: z.string().optional(),
+    timeMax: z.string().optional(),
   }),
   outputSchema: z.object({
     events: z.array(z.object({
@@ -95,8 +95,8 @@ const addCalendarEventTool = createTool({
     inputSchema: z.object({
       summary: z.string(),
       // FIX: Removed .datetime() for more flexible parsing by the Google API
-      startTime: z.string().describe("The start time in ISO 8601 format."),
-      endTime: z.string().describe("The end time in ISO 8601 format."),
+      startTime: z.string().describe(" VERY IMPORTANT: Convert All given times to ISO 8601 format."),
+      endTime: z.string().describe(" VERY IMPORTANT: Convert All given times to ISO 8601 format."),
       location: z.string().optional(),
     }),
     outputSchema: z.object({
@@ -176,3 +176,5 @@ export const calendarTools = {
     deleteCalendarEventTool,
     updateCalendarEventTool,
 };
+
+

@@ -1,16 +1,13 @@
-// src/tools/saveFeedbackTool.ts
 import { createTool } from '@mastra/core/tools';
 import { Pinecone } from '@pinecone-database/pinecone';
 import { openai } from '@ai-sdk/openai';
 import { embed } from 'ai';
 import { z } from 'zod';
 
-// Initialize clients once
-const pc = new Pinecone({ apiKey: 'pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQThU6u4MLJpZuAUcHohEXppYG4NQ2VvzuP7'});
-const pineconeIndex = pc.index('smart-calendar');
-
-export const embedFeedbackTool = createTool({
-  id: 'save-feedback-tool',
+const pc = new Pinecone({ apiKey: "pcsk_2iM6KJ_FyHXqBvDFUFqo4td5eW2L8NY337VQThU6u4MLJpZuAUcHohEXppYG4NQ2VvzuP7" });
+const pineconeIndex = pc.index("smart-calendar");
+const embedFeedbackTool = createTool({
+  id: "save-feedback-tool",
   description: "Takes raw user feedback, converts it to an embedding, and saves it to the Pinecone database. This is a complete, one-step action.",
   inputSchema: z.object({
     text: z.string().describe("The user's raw feedback text."),
@@ -20,88 +17,70 @@ export const embedFeedbackTool = createTool({
       eventStart: z.string().describe("Start time of the preceding event in ISO 8601 format."),
       eventEnd: z.string().describe("End time of the preceding event in ISO 8601 format."),
       eventDurationMinutes: z.number().describe("Duration of the event in minutes."),
-      eventLocation: z.string().optional().describe("Location of the event."),
-    }).optional().describe("Metadata about the closest event before this feedback."),
+      eventLocation: z.string().optional().describe("Location of the event.")
+    }).optional().describe("Metadata about the closest event before this feedback.")
   }),
   outputSchema: z.object({
-    success: z.boolean(),
+    success: z.boolean()
   }),
   execute: async ({ context }) => {
     const { text, userId, eventMetadata } = context;
-
-    // --- Step 1: Embed the text ---
     console.log(`Embedding text for user ${userId}...`);
     const { embedding } = await embed({
       model: openai.embedding("text-embedding-3-small"),
-      value: text,
+      value: text
     });
-
-    // --- Step 2: Save to Pinecone with event metadata if provided ---
-    console.log('Saving vector to Pinecone...');
+    console.log("Saving vector to Pinecone...");
     await pineconeIndex.upsert([{
       id: `feedback_${Date.now()}_${userId}`,
       values: embedding,
       metadata: {
-        userId: userId,
+        userId,
         originalText: text,
-        ...(eventMetadata || {}),
-      },
+        ...eventMetadata || {}
+      }
     }]);
-    
-    console.log('✅ Feedback saved successfully!');
+    console.log("\u2705 Feedback saved successfully!");
     return { success: true };
-  },
+  }
 });
-
-
-
-// In-memory feedback store
-// Structure: { userId: [ { eventSummary, eventStart, eventEnd, focus, physical, social, timestamp } ] }
-const feedbackStore: Record<string, any[]> = {};
-
-export const saveFeedbackTool = createTool({
-  id: 'save-feedback-tool',
+const feedbackStore = {};
+const saveFeedbackTool = createTool({
+  id: "save-feedback-tool",
   description: "Stores user feedback (focus, physical, social energy) linked to events for learning scheduling patterns.",
-  
   inputSchema: z.object({
     userId: z.string().describe("The ID of the user this feedback belongs to."),
     eventSummary: z.string().describe("Summary/title of the event."),
     eventStart: z.string().describe("Start time of the event in ISO 8601 format."),
     eventEnd: z.string().describe("End time of the event in ISO 8601 format."),
     feedback: z.object({
-      focus: z.number().min(1).max(5).describe("Mental focus during the event (1–5)."),
-      physical: z.number().min(1).max(5).describe("Physical energy during the event (1–5)."),
-      social: z.number().min(1).max(5).describe("Mood/social energy during the event (1–5)."),
-    }),
+      focus: z.number().min(1).max(5).describe("Mental focus during the event (1\u20135)."),
+      physical: z.number().min(1).max(5).describe("Physical energy during the event (1\u20135)."),
+      social: z.number().min(1).max(5).describe("Mood/social energy during the event (1\u20135).")
+    })
   }),
-
   outputSchema: z.object({
     success: z.boolean(),
-    message: z.string(),
+    message: z.string()
   }),
-
   execute: async ({ context }) => {
     const { userId, eventSummary, eventStart, eventEnd, feedback } = context;
-
     if (!feedbackStore[userId]) {
       feedbackStore[userId] = [];
     }
-
     feedbackStore[userId].push({
       eventSummary,
       eventStart,
       eventEnd,
       ...feedback,
-      timestamp: new Date().toISOString(),
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
-
-    console.log(`✅ Feedback stored for ${userId}:`, feedback);
-
+    console.log(`\u2705 Feedback stored for ${userId}:`, feedback);
     return { success: true, message: "Feedback saved successfully." };
-  },
+  }
 });
-
-// Optional: expose helper for other tools/agents
-export function getUserFeedback(userId: string) {
+function getUserFeedback(userId) {
   return feedbackStore[userId] || [];
 }
+
+export { embedFeedbackTool, getUserFeedback, saveFeedbackTool };
